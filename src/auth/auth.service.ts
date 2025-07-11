@@ -12,6 +12,7 @@ import { LoginDto } from './dtos/login.dto';
 import { JwtService } from '@nestjs/jwt';
 import { RefreshToken } from './schemas/refresh-tokens.schema';
 import { v4 as uuidv4 } from 'uuid';
+import { RefreshTokenDto } from './dtos/refresh-token.dto';
 
 @Injectable()
 export class AuthService {
@@ -81,6 +82,18 @@ export class AuthService {
     };
   }
 
+  async refreshTokens(refreshToken: string) {
+    const token = await this.RefreshTokenModel.findOneAndDelete({
+      token: refreshToken,
+      expiryDate: { $gte: new Date() },
+    });
+    if (!token) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+    return this.generateUserTokens(token.userId);
+  }
+
+  // Private methods for token generation
   async generateUserTokens(userId: string) {
     const accessToken = this.jwtService.sign({ userId }, { expiresIn: '1h' });
     const refreshToken = uuidv4();
@@ -95,6 +108,16 @@ export class AuthService {
   async storeRefreshToken(token: string, userId: string) {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 3);
+
+    const existingToken = await this.RefreshTokenModel.findOne({userId});
+    if(existingToken) {
+        // If a token already exists for this user, update it
+        existingToken.token = token;
+        existingToken.expiryDate = expiryDate;
+        await existingToken.save();
+        return;
+    }
+    
     await this.RefreshTokenModel.create({
       token,
       userId,
