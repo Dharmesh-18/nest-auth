@@ -83,7 +83,7 @@ export class AuthService {
   }
 
   async refreshTokens(refreshToken: string) {
-    const token = await this.RefreshTokenModel.findOneAndDelete({
+    const token = await this.RefreshTokenModel.findOne({
       token: refreshToken,
       expiryDate: { $gte: new Date() },
     });
@@ -109,19 +109,10 @@ export class AuthService {
     const expiryDate = new Date();
     expiryDate.setDate(expiryDate.getDate() + 3);
 
-    const existingToken = await this.RefreshTokenModel.findOne({userId});
-    if(existingToken) {
-        // If a token already exists for this user, update it
-        existingToken.token = token;
-        existingToken.expiryDate = expiryDate;
-        await existingToken.save();
-        return;
-    }
-    
-    await this.RefreshTokenModel.create({
-      token,
-      userId,
-      expiryDate,
-    });
+    await this.RefreshTokenModel.updateOne(
+      { userId },
+      { token, expiryDate },
+      { upsert: true },
+    );
   }
 }
