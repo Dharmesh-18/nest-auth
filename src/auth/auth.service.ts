@@ -13,6 +13,9 @@ import { LoginDto } from './dtos/login.dto';
 import { JwtService } from '@nestjs/jwt';
 import { RefreshToken } from './schemas/refresh-tokens.schema';
 import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
+import { ResetToken } from './schemas/reset-token.schema';
+import { MailService } from 'src/services/mail.service';
 
 @Injectable()
 export class AuthService {
@@ -20,6 +23,9 @@ export class AuthService {
     @InjectModel(User.name) private UserModel: Model<User>,
     @InjectModel(RefreshToken.name)
     private RefreshTokenModel: Model<RefreshToken>,
+    @InjectModel(ResetToken.name)
+    private ResetTokenModel: Model<ResetToken>,
+    private mailService: MailService,
     private jwtService: JwtService,
   ) {}
 
@@ -125,6 +131,64 @@ export class AuthService {
 
     return {
       message: 'Password changed successfully',
+    };
+  }
+
+  async forgotPassword(email: string) {
+    // Check if user exists
+    const user = await this.UserModel.findOne({ email });
+
+    if (user) {
+      const resetToken = nanoid(64);
+      const expiryDate = new Date();
+      expiryDate.setHours(expiryDate.getHours() + 1); // Reset Password Token valid for 1 hour
+
+      // Create reset token document
+      await this.ResetTokenModel.updateOne(
+        {
+          userId: user._id,
+        },
+        {
+          token: resetToken,
+          expiryDate,
+        },
+        { upsert: true },
+      );
+
+      await this.mailService.sendPasswordResetEmail(email, resetToken);
+    }
+
+    return {
+      message:
+        'If this email is registered, you will receive a password reset link shortly.',
+    };
+  }
+
+  async resetPassword(newPassword: string, resetToken: string) {
+    // Validate reset token
+    const token = await this.ResetTokenModel.findOneAndDelete({
+      token: resetToken,
+      expiryDate: { $gte: new Date() },
+    });
+    if (!token) {
+      throw new UnauthorizedException('Invalid or expired reset password link');
+    }
+
+    // Find user by token
+    const user = await this.UserModel.findById(token.userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    // Hash new password
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    // Update user password
+    await this.UserModel.updateOne(
+      { _id: user._id },
+      { password: hashedNewPassword },
+    );
+
+    return {
+      message: 'Password reset successfully',
     };
   }
 
