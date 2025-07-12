@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { SignupDto } from './dtos/signup.dto';
@@ -12,7 +13,6 @@ import { LoginDto } from './dtos/login.dto';
 import { JwtService } from '@nestjs/jwt';
 import { RefreshToken } from './schemas/refresh-tokens.schema';
 import { v4 as uuidv4 } from 'uuid';
-import { RefreshTokenDto } from './dtos/refresh-token.dto';
 
 @Injectable()
 export class AuthService {
@@ -93,7 +93,42 @@ export class AuthService {
     return this.generateUserTokens(token.userId);
   }
 
-  // Private methods for token generation
+  async changePassword(
+    userId: string,
+    oldPassword: string,
+    newPassword: string,
+  ) {
+    // check if user exists
+    const user = await this.UserModel.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    // check if old password is correct
+    const isOldPasswordValid = await bcrypt.compare(oldPassword, user.password);
+    if (!isOldPasswordValid) {
+      throw new UnauthorizedException('Old password is incorrect');
+    }
+
+    // check if new password is the same as old password
+    if (oldPassword === newPassword) {
+      throw new BadRequestException(
+        'New password cannot be the same as old password',
+      );
+    }
+    // hash new password
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+    // update user password
+    await this.UserModel.updateOne(
+      { _id: userId },
+      { password: hashedNewPassword },
+    );
+
+    return {
+      message: 'Password changed successfully',
+    };
+  }
+
+  // ------------------- Private methods for token generation --------------------
   async generateUserTokens(userId: string) {
     const accessToken = this.jwtService.sign({ userId }, { expiresIn: '1h' });
     const refreshToken = uuidv4();
