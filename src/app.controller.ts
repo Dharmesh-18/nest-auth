@@ -11,7 +11,7 @@ import { AuthorizationGuard } from './guards/authorization.guard';
 export class AppController {
   constructor(private readonly appService: AppService) {}
 
-  @Permissions([{ resource: Resource.products, actions: [Action.read]}])
+  @Permissions([{ resource: Resource.products, actions: [Action.read] }])
   @Get()
   someProtectedRoute(@Req() req) {
     return { message: 'Access granted to protected route!', user: req.userId };

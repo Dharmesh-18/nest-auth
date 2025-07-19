@@ -1,15 +1,21 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AuthService } from 'src/auth/auth.service';
 import { PERMISSIONS_KEY } from 'src/decorators/permissions.decorator';
+import { Permission } from 'src/roles/dtos/role.dto';
 
 @Injectable()
 export class AuthorizationGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private authService: AuthService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -18,12 +24,33 @@ export class AuthorizationGuard implements CanActivate {
       throw new UnauthorizedException('User Id not found');
     }
 
-    const requiredRoutePermissions = this.reflector.getAllAndOverride(
+    const routePermissions: Permission[] = this.reflector.getAllAndOverride(
       PERMISSIONS_KEY,
       [context.getHandler(), context.getClass()],
     );
 
-    console.log(`Required permissions for this route: ${JSON.stringify(requiredRoutePermissions)}`);
+    if (!routePermissions) return true;
+
+    try {
+      const userPermissions = await this.authService.getUserPermissions(
+        request.userId,
+      );
+
+      for (const routePermission of routePermissions) {
+        const userPermission = userPermissions?.find(
+          (perm) => perm.resource === routePermission.resource,
+        );
+        if (!userPermission) throw new ForbiddenException();
+
+        const allActionsAvailable = routePermission.actions.every(
+          (requiredAction) => userPermission.actions.includes(requiredAction),
+        );
+
+        if (!allActionsAvailable) throw new ForbiddenException();
+      }
+    } catch (error) {
+      throw new ForbiddenException();
+    }
 
     return true;
   }
